@@ -213,6 +213,7 @@ namespace NLog.MailKit
         /// <note type="note">This feature is only available if connected SMTP server supports capability
         /// <see cref="SmtpCapabilities.RequireTLS"/> flag when sending the message.</note>
         /// </remarks>
+        /// <docgen category='SMTP Options' order='14' />
         public Layout<bool> RequireTLS { get; set; } = false;
 
         /// <summary>
@@ -220,6 +221,7 @@ namespace NLog.MailKit
         /// 
         /// If <see cref="EnableSsl" /> is <c>true</c>, then <see cref="SecureSocketOptions.SslOnConnect" /> will be used.
         /// </summary>
+        /// <docgen category='SMTP Options' order='14' />
         [DefaultValue(DefaultSecureSocketOption)]
         [CLSCompliant(false)]
         public Layout<SecureSocketOptions> SecureSocketOption { get; set; } = DefaultSecureSocketOption;
@@ -246,19 +248,27 @@ namespace NLog.MailKit
         /// Gets or sets a value indicating whether NewLine characters in the body should be replaced with <br/> tags.
         /// </summary>
         /// <remarks>Only happens when <see cref="Html"/> is set to true.</remarks>
+        /// <docgen category='Message Options' order='100' />
         public Layout<bool> ReplaceNewlineWithBrTagInHtml { get; set; } = false;
 
         /// <summary>
         /// Gets or sets a value indicating the SMTP client timeout (in milliseconds)
         /// </summary>
         /// <remarks>Warning: zero is not infinite waiting</remarks>
+        /// <docgen category='SMTP Options' order='17' />
         public Layout<int> Timeout { get; set; } = 10000;
 
         /// <summary>
         /// Gets or sets the folder where applications save mail messages to be processed by the local SMTP server.
         /// </summary>
-        /// <docgen category='SMTP Options' order='17' />
+        /// <docgen category='SMTP Options' order='18' />
         public Layout? PickupDirectoryLocation { get; set; }
+
+        /// <summary>
+        /// OAuth2 token used to authenticate against SMTP server. Remember to also assign <see cref="SmtpAuthentication"/> = <see cref="SmtpAuthenticationMode.OAuth2"/>
+        /// </summary>
+        /// <docgen category='SMTP Options' order='19' />
+        public Layout? OAuth2Token { get; set; }
 
         /// <summary>
         /// Gets the array of email headers that are transmitted with this email message
@@ -358,7 +368,7 @@ namespace NLog.MailKit
                 client.Timeout = RenderLogEvent(Timeout, lastEvent);
 
                 var renderedHost = RenderLogEvent(SmtpServer, lastEvent);
-                if (string.IsNullOrEmpty(renderedHost))
+                if (string.IsNullOrWhiteSpace(renderedHost))
                 {
                     throw new NLogRuntimeException(string.Format(RequiredPropertyIsEmptyFormat, nameof(SmtpServer)));
                 }
@@ -400,6 +410,18 @@ namespace NLog.MailKit
 
                     InternalLogger.Trace("{0}: Authenticate with username '{1}'", this, userName);
                     client.Authenticate(userName, password);
+                }
+                else if (smtpAuthentication == SmtpAuthenticationMode.OAuth2)
+                {
+                    var userName = RenderLogEvent(SmtpUserName, lastEvent);
+                    var oauth2Token = RenderLogEvent(OAuth2Token, lastEvent);
+                    if (string.IsNullOrWhiteSpace(oauth2Token))
+                    {
+                        throw new NLogRuntimeException(string.Format(RequiredPropertyIsEmptyFormat, nameof(OAuth2Token)));
+                    }
+                    InternalLogger.Trace("{0}: Authenticate with OAuth2 username '{1}'", this, userName);
+                    var oauth2 = new SaslMechanismOAuth2(userName, oauth2Token);
+                    client.Authenticate(oauth2);
                 }
 
                 client.Send(message);
@@ -499,6 +521,11 @@ namespace NLog.MailKit
             if ((PickupDirectoryLocation is null || ReferenceEquals(PickupDirectoryLocation, Layout.Empty)) && (SmtpServer is null || ReferenceEquals(SmtpServer, Layout.Empty)))
             {
                 throw new NLogConfigurationException("MailTarget - SmtpServer is required");
+            }
+
+            if (smtpAuthentication == SmtpAuthenticationMode.OAuth2 && (OAuth2Token is null || ReferenceEquals(OAuth2Token, Layout.Empty)))
+            {
+                throw new NLogConfigurationException("MailTarget - OAuth2Token is required when SmtpAuthentication = OAuth2");
             }
         }
 
